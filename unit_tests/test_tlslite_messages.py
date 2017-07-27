@@ -10,7 +10,8 @@ except ImportError:
 from tlslite.messages import ClientHello, ServerHello, RecordHeader3, Alert, \
         RecordHeader2, Message, ClientKeyExchange, ServerKeyExchange, \
         CertificateRequest, CertificateVerify, ServerHelloDone, ServerHello2, \
-        ClientMasterKey, ClientFinished, ServerFinished, CertificateStatus
+        ClientMasterKey, ClientFinished, ServerFinished, CertificateStatus, \
+        EncryptedExtensions
 from tlslite.utils.codec import Parser
 from tlslite.constants import CipherSuite, CertificateType, ContentType, \
         AlertLevel, AlertDescription, ExtensionType, ClientCertificateType, \
@@ -1126,6 +1127,7 @@ class TestServerHello(unittest.TestCase):
                 "session_id=bytearray(b''), "\
                 "cipher_suite=34500, compression_method=0, _tack_ext=None, "\
                 "extensions=[])", repr(server_hello))
+
 
 class TestServerHello2(unittest.TestCase):
     def test___init__(self):
@@ -2488,6 +2490,70 @@ class TestCertificateStatus(unittest.TestCase):
             b'\x01'
             b'\x00\x00\x02'
             b'\xbc\xaa'))
+
+
+class TestEncryptedExtensions(unittest.TestCase):
+    def setUp(self):
+        self.msg = EncryptedExtensions()
+
+    def test___init__(self):
+        self.assertIsNotNone(self.msg)
+        self.assertEqual(self.msg.handshakeType, 8)
+
+    def test_create(self):
+
+        ext = SNIExtension()
+
+        self.msg.create([ext])
+
+        self.assertIsInstance(self.msg.extensions[0], SNIExtension)
+
+    def test_parse(self):
+        parser = Parser(bytearray(
+            # b'\x08'  # type
+            b'\x00\x00\x02'  # overall length
+            b'\x00\x00'))  # extensions list
+
+        ext = self.msg.parse(parser)
+
+        self.assertEqual(ext.extensions, [])
+
+    def test_parse_with_list_missing(self):
+        parser = Parser(bytearray(
+            b'\x00\x00\x00'))
+
+        with self.assertRaises(SyntaxError):
+            self.msg.parse(parser)
+
+    def test_parse_with_extension(self):
+        parser = Parser(bytearray(
+            b'\x00\x00\x0e'  # overall length
+            b'\x00\x0c'  # extensions list length
+            b'\x00\x28'  # key share extension
+            b'\x00\x08'  # key share extension length
+            b'\x00\x02'  # selected group
+            b'\x00\x04'  # length of key exchange value
+            b'\x01\x02\x03\x04'))  # key exchange value
+
+        ext = self.msg.parse(parser)
+
+        self.assertEqual(len(ext.extensions), 1)
+        self.assertEqual(ext.extensions[0].extData,
+                         bytearray(b'\x00\x02\x00\x04\x01\x02\x03\x04'))
+
+    def test_parse_with_trailing_data(self):
+        parser = Parser(bytearray(
+            b'\x00\x00\x0f'  # overall length
+            b'\x00\x0c'  # extensions list length
+            b'\x00\x28'  # key share extension
+            b'\x00\x08'  # key share extension length
+            b'\x00\x02'  # selected group
+            b'\x00\x04'  # length of key exchange value
+            b'\x01\x02\x03\x04'  # key exchange value
+            b'\x01'))  # trailing byte
+
+        with self.assertRaises(SyntaxError):
+            self.msg.parse(parser)
 
 
 if __name__ == '__main__':
