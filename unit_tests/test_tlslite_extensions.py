@@ -352,7 +352,8 @@ class TestTLSExtension(unittest.TestCase):
         ext = ext.create(0, bytearray(b'\x00\x00'))
 
         self.assertEqual("TLSExtension(extType=0, "\
-                "extData=bytearray(b'\\x00\\x00'), serverType=False)",
+                "extData=bytearray(b'\\x00\\x00'), serverType=False, "
+                "encExtType=False)",
                 repr(ext))
 
 class TestVarListExtension(unittest.TestCase):
