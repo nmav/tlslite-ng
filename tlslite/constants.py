@@ -556,6 +556,14 @@ class CipherSuite:
     TLS_EMPTY_RENEGOTIATION_INFO_SCSV = 0x00FF
     ietfNames[0x00FF] = 'TLS_EMPTY_RENEGOTIATION_INFO_SCSV'
 
+    # TLS 1.3 ciphersuites
+    TLS_AES_128_GCM_SHA256 = 0x1301
+    ietfNames[0x1301] = 'TLS_AES_128_GCM_SHA256'
+    TLS_AES_256_GCM_SHA384 = 0x1302
+    ietfNames[0x1302] = 'TLS_AES_256_GCM_SHA384'
+    TLS_CHACHA20_POLY1305_SHA256 = 0x1303
+    ietfNames[0x1303] = 'TLS_CHACHA20_POLY1305_SHA256'
+
     # RFC 7507 - Fallback Signaling Cipher Suite Value for Preventing Protocol
     # Downgrade Attacks
     TLS_FALLBACK_SCSV = 0x5600
@@ -755,6 +763,7 @@ class CipherSuite:
     aes128GcmSuites.append(TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256)  # unsupp
     aes128GcmSuites.append(TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256)  # unsupp
     aes128GcmSuites.append(TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256)
+    aes128GcmSuites.append(TLS_AES_128_GCM_SHA256)
 
     #: AES-256-GCM ciphers (implicit SHA384, see sha384PrfSuites)
     aes256GcmSuites = []
@@ -765,6 +774,7 @@ class CipherSuite:
     aes256GcmSuites.append(TLS_ECDH_ECDSA_WITH_AES_256_GCM_SHA384)  # unsupp
     aes256GcmSuites.append(TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384)  # unsupported
     aes256GcmSuites.append(TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384)
+    aes256GcmSuites.append(TLS_AES_256_GCM_SHA384)
 
     #: CHACHA20 cipher, 00'th IETF draft (implicit POLY1305 authenticator)
     chacha20draft00Suites = []
@@ -775,6 +785,7 @@ class CipherSuite:
     chacha20Suites = []
     chacha20Suites.append(TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256)
     chacha20Suites.append(TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256)
+    chacha20Suites.append(TLS_CHACHA20_POLY1305_SHA256)
 
     #: RC4 128 stream cipher
     rc4Suites = []
@@ -897,6 +908,12 @@ class CipherSuite:
     tls12Suites.extend(sha256Suites)
     tls12Suites.extend(sha384Suites)
     tls12Suites.extend(aeadSuites)
+
+    #: TLS1.3 specific ciphersuites
+    tls13Suites = []
+    tls13Suites.extend(TLS_AES_256_GCM_SHA384)
+    tls13Suites.extend(TLS_AES_128_GCM_SHA256)
+    tls13Suites.extend(TLS_CHACHA20_POLY1305_SHA256)
 
     @staticmethod
     def filterForVersion(suites, minVersion, maxVersion):
