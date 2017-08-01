@@ -386,6 +386,7 @@ class AlertDescription(TLSEnum):
     inappropriate_fallback = 86
     user_canceled = 90
     no_renegotiation = 100
+    missing_extension = 109
     unsupported_extension = 110  # RFC 5246
     certificate_unobtainable = 111  # RFC 6066
     unrecognized_name = 112  # RFC 6066
@@ -911,9 +912,9 @@ class CipherSuite:
 
     #: TLS1.3 specific ciphersuites
     tls13Suites = []
-    tls13Suites.extend(TLS_AES_256_GCM_SHA384)
-    tls13Suites.extend(TLS_AES_128_GCM_SHA256)
-    tls13Suites.extend(TLS_CHACHA20_POLY1305_SHA256)
+    tls13Suites.append(TLS_AES_256_GCM_SHA384)
+    tls13Suites.append(TLS_AES_128_GCM_SHA256)
+    tls13Suites.append(TLS_CHACHA20_POLY1305_SHA256)
 
     @staticmethod
     def filterForVersion(suites, minVersion, maxVersion):

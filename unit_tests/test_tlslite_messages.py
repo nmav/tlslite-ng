@@ -18,7 +18,7 @@ from tlslite.constants import CipherSuite, CertificateType, ContentType, \
         HashAlgorithm, SignatureAlgorithm, ECCurveType, GroupName, \
         SSL2HandshakeType, CertificateStatusType
 from tlslite.extensions import SNIExtension, ClientCertTypeExtension, \
-    SRPExtension, TLSExtension, NPNExtension
+    SRPExtension, TLSExtension, NPNExtension, SupportedGroupsExtension
 from tlslite.errors import TLSInternalError
 
 class TestMessage(unittest.TestCase):
@@ -2570,30 +2570,29 @@ class TestEncryptedExtensions(unittest.TestCase):
 
     def test_parse_with_extension(self):
         parser = Parser(bytearray(
-            b'\x00\x00\x0e'  # overall length
-            b'\x00\x0c'  # extensions list length
-            b'\x00\x28'  # key share extension
-            b'\x00\x08'  # key share extension length
-            b'\x00\x02'  # selected group
-            b'\x00\x04'  # length of key exchange value
-            b'\x01\x02\x03\x04'))  # key exchange value
+            b'\x00\x00\x0c'  # overall length
+            b'\x00\x0a'  # extensions list length
+            b'\x00\x0a'  # supported groups extension
+            b'\x00\x06'  # key share extension length
+            b'\x00\x04'  # length of named_group_list
+            b'\x00\x17\x00\x1D'))  # secp256r1 and x25519
 
         ext = self.msg.parse(parser)
 
         self.assertEqual(len(ext.extensions), 1)
-        self.assertEqual(ext.extensions[0].extData,
-                         bytearray(b'\x00\x02\x00\x04\x01\x02\x03\x04'))
+        self.assertIsInstance(ext.extensions[0], SupportedGroupsExtension)
+        self.assertEqual(ext.extensions[0].groups, [GroupName.secp256r1,
+                                                    GroupName.x25519])
 
     def test_parse_with_trailing_data(self):
         parser = Parser(bytearray(
-            b'\x00\x00\x0f'  # overall length
-            b'\x00\x0c'  # extensions list length
-            b'\x00\x28'  # key share extension
-            b'\x00\x08'  # key share extension length
-            b'\x00\x02'  # selected group
-            b'\x00\x04'  # length of key exchange value
-            b'\x01\x02\x03\x04'  # key exchange value
-            b'\x01'))  # trailing byte
+            b'\x00\x00\x0d'  # overall length
+            b'\x00\x0a'  # extensions list length
+            b'\x00\x0a'  # supported groups extension
+            b'\x00\x06'  # key share extension length
+            b'\x00\x04'  # length of named_group_list
+            b'\x00\x17\x00\x1D'  # secp256r1 and x25519
+            b'\x00'))  # tailing data
 
         with self.assertRaises(SyntaxError):
             self.msg.parse(parser)

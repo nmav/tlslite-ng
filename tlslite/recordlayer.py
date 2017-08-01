@@ -13,7 +13,8 @@ from .utils.cipherfactory import createAESGCM, createAES, createRC4, \
         createTripleDES, createCHACHA20
 from .utils.codec import Parser, Writer
 from .utils.compat import compatHMAC
-from .utils.cryptomath import getRandomBytes, MD5
+from .utils.cryptomath import getRandomBytes, MD5, derive_secret, \
+        HKDF_expand_label
 from .utils.constanttime import ct_compare_digest, ct_check_cbc_mac_and_pad
 from .errors import TLSRecordOverflow, TLSIllegalParameterException,\
         TLSAbruptCloseError, TLSDecryptionFailed, TLSBadRecordMAC
@@ -71,7 +72,9 @@ class RecordSocket(object):
             header = RecordHeader2().create(len(data),
                                             padding)
         else:
-            header = RecordHeader3().create(self.version,
+            contentType = msg.contentType
+            version = self.version
+            header = RecordHeader3().create(version,
                                             msg.contentType,
                                             len(data))
 
@@ -386,14 +389,14 @@ class RecordLayer(object):
 
         return buf
 
-    @staticmethod
-    def _getNonce(state, seqnum):
+    def _getNonce(self, state, seqnum):
         """Calculate a nonce for a given enc/dec context"""
         # ChaCha is using the draft-TLS1.3-like nonce derivation
-        if state.encContext.name == "chacha20-poly1305" and \
-                len(state.fixedNonce) == 12:
+        if (state.encContext.name == "chacha20-poly1305" and
+                len(state.fixedNonce) == 12) or self._version == (3, 4):
             # 4 byte nonce is used by the draft cipher
-            nonce = bytearray(i ^ j for i, j in zip(bytearray(4) + seqnum,
+            pad = bytearray(len(state.fixedNonce) - len(seqnum))
+            nonce = bytearray(i ^ j for i, j in zip(pad + seqnum,
                                                     state.fixedNonce))
         else:
             nonce = state.fixedNonce + seqnum
@@ -620,7 +623,7 @@ class RecordLayer(object):
         """Decrypt AEAD encrypted data"""
         seqnumBytes = self._readState.getSeqNumBytes()
         #AES-GCM, has an explicit variable nonce.
-        if "aes" in self._readState.encContext.name:
+        if "aes" in self._readState.encContext.name and self.version < (3, 4):
             explicitNonceLength = 8
             if explicitNonceLength > len(buf):
                 #Publicly invalid.
@@ -634,11 +637,14 @@ class RecordLayer(object):
             #Publicly invalid.
             raise TLSBadRecordMAC("Truncated tag")
 
-        plaintextLen = len(buf) - self._readState.encContext.tagLength
-        authData = seqnumBytes + bytearray([recordType, self.version[0],
-                                            self.version[1],
-                                            plaintextLen//256,
-                                            plaintextLen%256])
+        if self.version in [(3, 0), (3, 1), (3, 2), (3, 3)]:
+            plaintextLen = len(buf) - self._readState.encContext.tagLength
+            authData = seqnumBytes + bytearray([recordType, self.version[0],
+                                                self.version[1],
+                                                plaintextLen//256,
+                                                plaintextLen%256])
+        else:  # TLS 1.3
+            authData = bytearray(0)
 
         buf = self._readState.encContext.open(nonce, buf, authData)
         if buf is None:
@@ -681,6 +687,30 @@ class RecordLayer(object):
             data = data[:-padding]
         return data
 
+    @staticmethod
+    def _tls13_de_pad(data):
+        """
+        Remove the padding and extract content type from TLSInnerPlaintext.
+
+        :param bytearray data: decrypted plaintext TLS 1.3 record payload
+            (the serialised TLSInnerPlaintext data structure)
+
+        :rtype: tuple
+        """
+        # the padding is at the end and the first non-zero byte is the
+        # padding
+        # could be enumerate(reversed(data), if that worked at all
+        # could be enumerate(list(reversed(data))), if that didn't waste
+        # memory (most of messages will have little to no padding)
+        for pos, value in zip(reversed(range(len(data))), reversed(data)):
+            if value != 0:
+                break
+        else:
+            raise TLSUnexpectedMessage("Malformed record layer "
+                    "inner plaintext - content type missing")
+
+        return data[:pos], value
+
     def recvRecord(self):
         """
         Read, decrypt and check integrity of a single record
@@ -720,6 +750,11 @@ class RecordLayer(object):
         # RFC 5246, section 6.2.1
         if len(data) > 2**14:
             raise TLSRecordOverflow()
+
+        # TLS 1.3 encryps the type
+        if self.version > (3, 3):
+            data, contentType = self._tls13_de_pad(data)
+            header = RecordHeader3().create((3, 4), contentType, len(data))
 
         yield (header, Parser(data))
 
@@ -1007,4 +1042,59 @@ class RecordLayer(object):
             #Choose fixedIVBlock for TLS 1.1 (this is encrypted with the CBC
             #residue to create the IV for each sent block)
             self.fixedIVBlock = getRandomBytes(ivLength)
+
+    def calcTLS1_3HandshakePendingState(self, cipherSuite, handshake_secret,
+                                        handshake_hashes,
+                                        implementations):
+        """Create pending state for encryption of handshake messages."""
+
+        prf_name = 'sha384' if cipherSuite \
+                in CipherSuite.sha384PrfSuites \
+                else 'sha256'
+
+        key_length, iv_length, cipher_func = \
+            self._getCipherSettings(cipherSuite)
+        iv_length = 12
+
+        cl_traffic_secret = derive_secret(handshake_secret,
+                                          bytearray(b'c hs traffic'),
+                                          handshake_hashes, prf_name)
+        sr_traffic_secret = derive_secret(handshake_secret,
+                                          bytearray(b's hs traffic'),
+                                          handshake_hashes, prf_name)
+
+        clientPendingState = ConnectionState()
+        serverPendingState = ConnectionState()
+
+        clientPendingState.macContext = None
+        clientPendingState.encContext = \
+            cipher_func(HKDF_expand_label(cl_traffic_secret,
+                                          b"key", b"",
+                                          key_length,
+                                          prf_name),
+                        implementations)
+        clientPendingState.fixedNonce = HKDF_expand_label(cl_traffic_secret,
+                                                          b"iv", b"",
+                                                          iv_length,
+                                                          prf_name)
+
+        serverPendingState.macContext = None
+        serverPendingState.encContext = \
+            cipher_func(HKDF_expand_label(sr_traffic_secret,
+                                          b"key", b"",
+                                          key_length,
+                                          prf_name),
+                        implementations)
+        serverPendingState.fixedNonce = HKDF_expand_label(sr_traffic_secret,
+                                                          b"iv", b"",
+                                                          iv_length,
+                                                          prf_name)
+
+        if self.client:
+            self._pendingWriteState = clientPendingState
+            self._pendingReadState = serverPendingState
+        else:
+            self._pendingWriteState = serverPendingState
+            self._pendingReadState = clientPendingState
+
 
